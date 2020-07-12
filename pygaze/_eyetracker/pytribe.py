@@ -135,6 +135,30 @@ class EyeTribe:
         # write message
         self._logfile.write(line + u'\n') # to internal buffer
 
+    def log_message_flush(self, message):
+        """Logs a message to the logfile, time locked to the most recent
+        sample, same as log_message() but this one flushes the message in
+        order to take effect immediately
+        """
+        
+        # Get the current time.
+        t = time.time()
+        # Make a string in the specific format that the EyeTribe uses:
+        # yyyy-mm-dd HH:MM:SS.000
+        ts = '{}.{}'.format(time.strftime('%Y-%m-%d %H:%M:%S'), round(t % 1, 3)*1000)
+        
+        # Correct the time to EyeTribe time
+        if self._clockdiff != None:
+            t = int(t*1000 + self._clockdiff)
+        else:
+            t = ''
+        # assemble line
+        line = self._separator.join(map(str,[u'MSG', ts, t, safe_decode(message)]))
+        # write message
+        self._logfile.write(line + u'\n') # to internal buffer
+        self._logfile.flush() # internal buffer to RAM
+        os.fsync(self._logfile.fileno()) # RAM file cache to disk
+
     def sample(self):
 
         """Returns the most recent point of regard (=gaze location on screen)

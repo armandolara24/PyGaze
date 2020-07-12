@@ -102,10 +102,10 @@ class EyeTribeTracker(BaseEyeTracker):
         self.screensize = settings.SCREENSIZE # display size in cm
         self.kb = Keyboard(keylist=['space', 'escape', 'q'], timeout=1)
         self.errorbeep = Sound(osc='saw',freq=100, length=100)
-        
+
         # output file properties
         self.outputfile = logfile
-        
+
         # eye tracker properties
         self.connected = False
         self.recording = False
@@ -114,7 +114,7 @@ class EyeTribeTracker(BaseEyeTracker):
         self.maxtries = 100 # number of samples obtained before giving up (for obtaining accuracy and tracker distance information, as well as starting or stopping recording)
         self.prevsample = (-1,-1)
         self.prevps = -1
-        
+
         # event detection properties
         self.fixtresh = 1.5 # degrees; maximal distance from fixation start (if gaze wanders beyond this, fixation has stopped)
         self.fixtimetresh = 100 # milliseconds; amount of time gaze has to linger within self.fixtresh to be marked as a fixation
@@ -160,7 +160,7 @@ class EyeTribeTracker(BaseEyeTracker):
                    log file and some properties are updated (i.e. the
                    thresholds for detection algorithms)
         """
-        
+
         # CALIBRATION
         # determine the calibration points
         calibpoints = []
@@ -168,7 +168,7 @@ class EyeTribeTracker(BaseEyeTracker):
             for y in [0.1,0.5,0.9]:
                 calibpoints.append((int(x*self.dispsize[0]),int(y*self.dispsize[1])))
         random.shuffle(calibpoints)
-        
+
         # show a message
         self.screen.clear()
         self.screen.draw_text(
@@ -176,7 +176,7 @@ class EyeTribeTracker(BaseEyeTracker):
             fontsize=20)
         self.disp.fill(self.screen)
         self.disp.show()
-        
+
         # wait for keyboard input
         key, keytime = self.kb.get_key(keylist=['q', 's', 'space'],
             timeout=None, flush=True)
@@ -186,29 +186,32 @@ class EyeTribeTracker(BaseEyeTracker):
             quited = True
         else:
             quited = False
-        
+
         # Pause the processing of samples during the calibration.
 #        self.eyetribe._pause_sample_processing()
-        # run until the user is statisfied, or quits
+# run until the user is statisfied, or quits
         calibrated = False
         calibresult = None
         while not quited and not calibrated:
 
+            self.log('Clearing existing calibration if there is one')
             # Clear the existing calibration.
             if self.eyetribe._tracker.get_iscalibrated():
                 self.eyetribe._lock.acquire(True)
                 self.eyetribe.calibration.clear()
                 self.eyetribe._lock.release()
-            
-            # Wait for a bit.
-            clock.pause(1500)
 
+            # Wait for a bit.
+            clock.pause(1000)
+
+            self.log('Sending start calibration')
             # start a new calibration
             if not self.eyetribe._tracker.get_iscalibrating():
                 self.eyetribe._lock.acquire(True)
                 self.eyetribe.calibration.start(pointcount=len(calibpoints))
                 self.eyetribe._lock.release()
-            
+
+            self.log('Iterating through calibration points')
             # loop through calibration points
             for cpos in calibpoints:
                 # Check whether the calibration is already done.
@@ -217,22 +220,34 @@ class EyeTribeTracker(BaseEyeTracker):
                 # simply stop allowing further pointstart requests.)
                 if self.eyetribe._tracker.get_iscalibrated():
                     break
-                
+
+                self.log('Trying to draw calibration point')
                 # Draw a calibration target.
                 self.draw_calibration_target(cpos[0], cpos[1])
+                self.log('Calibration point is supposed to be drawn')
+                self.log(
+                    'Going to wait {} ms for participant to start looking at the cal point'
+                    .format(settings.EYETRIBEPRECALIBDUR))
                 # wait for a bit to allow participant to start looking at
                 # the calibration point (#TODO: space press?)
                 clock.pause(settings.EYETRIBEPRECALIBDUR)
+                self.log('Wait finished')
+                self.log('Sending calibration point initiation message')
                 # start calibration of point
                 self.eyetribe._lock.acquire(True)
                 self.eyetribe.calibration.pointstart(cpos[0],cpos[1])
                 self.eyetribe._lock.release()
                 # wait for a second
+                self.log('Going to wait for {} ms to get response'.format(
+                    settings.EYETRIBECALIBDUR))
                 clock.pause(settings.EYETRIBECALIBDUR)
+                self.log('Wait finished')
                 # stop calibration of this point
                 self.eyetribe._lock.acquire(True)
                 self.eyetribe.calibration.pointend()
                 self.eyetribe._lock.release()
+                self.log('Calibration of this point stopped')
+                self.log('Checking if Q has been pressed')
                 # check if the Q key has been pressed
                 if self.kb.get_key(keylist=['q'],timeout=10,flush=False)[0] == 'q':
                     # abort calibration
@@ -242,8 +257,8 @@ class EyeTribeTracker(BaseEyeTracker):
                     # set quited variable and break this for loop
                     quited = True
                     break
-            
-            # retry option if the calibration was aborted            
+
+            # retry option if the calibration was aborted
             if quited:
                 # show retry message
                 self.screen.clear()
@@ -305,7 +320,7 @@ class EyeTribeTracker(BaseEyeTracker):
                 if calibresult['result']:
                     self.screen.draw_text(text="Calibration successful",
                         colour=(0, 255, 0),
-                        pos=(int(self.dispsize[0]*0.5), int(self.dispsize[1]*0.25)), 
+                        pos=(int(self.dispsize[0]*0.5), int(self.dispsize[1]*0.25)),
                         fontsize=20)
                 else:
                     self.screen.draw_text(text="Calibration failed",
@@ -340,7 +355,7 @@ class EyeTribeTracker(BaseEyeTracker):
         # Continue the processing of samples after the calibration.
 #        self.eyetribe._unpause_sample_processing()
 
-        # calibration failed if the user quited
+# calibration failed if the user quited
         if quited:
             return False
 
@@ -353,13 +368,13 @@ class EyeTribeTracker(BaseEyeTracker):
                 var.append(p['mepix'])
         noise = sum(var) / float(len(var)) if var else float('inf')
         self.pxdsttresh = (noise, noise)
-                
+
         # AFTERMATH
         # store some variables
         pixpercm = (self.dispsize[0]/float(self.screensize[0]) + self.dispsize[1]/float(self.screensize[1])) / 2
         screendist = settings.SCREENDIST
         # calculate thresholds based on tracker settings
-        self.accuracy = ((calibresult['Ldeg'],calibresult['Ldeg']), (calibresult['Rdeg'],calibresult['Rdeg'])) 
+        self.accuracy = ((calibresult['Ldeg'],calibresult['Ldeg']), (calibresult['Rdeg'],calibresult['Rdeg']))
         self.pxerrdist = deg2pix(screendist, self.errdist, pixpercm)
         self.pxfixtresh = deg2pix(screendist, self.fixtresh, pixpercm)
         self.pxaccuracy = ((deg2pix(screendist, self.accuracy[0][0], pixpercm),deg2pix(screendist, self.accuracy[0][1], pixpercm)), (deg2pix(screendist, self.accuracy[1][0], pixpercm),deg2pix(screendist, self.accuracy[1][1], pixpercm)))
@@ -400,7 +415,7 @@ class EyeTribeTracker(BaseEyeTracker):
 
         # close connection
         self.eyetribe.close()
-        self.connected = False        
+        self.connected = False
 
 
     def connected(self):
@@ -445,11 +460,11 @@ class EyeTribeTracker(BaseEyeTracker):
                        or not (False); or calls self.calibrate if 'q'
                        or 'escape' is pressed
         """
-        
+
         if pos == None:
             pos = self.dispsize[0] / 2, self.dispsize[1] / 2
         if fix_triggered:
-            return self.fix_triggered_drift_correction(pos)        
+            return self.fix_triggered_drift_correction(pos)
         self.draw_drift_correction_target(pos[0], pos[1])
         pressed = False
         while not pressed:
@@ -464,9 +479,9 @@ class EyeTribeTracker(BaseEyeTracker):
                 else:
                     self.errorbeep.play()
         return False
-        
+
     def draw_drift_correction_target(self, x, y):
-        
+
         """
         Draws the drift-correction target.
         
@@ -475,15 +490,15 @@ class EyeTribeTracker(BaseEyeTracker):
         x        --    The X coordinate
         y        --    The Y coordinate
         """
-        
+
         self.screen.clear()
         self.screen.draw_fixation(fixtype='dot', colour=settings.FGC, pos=(x,y),
             pw=0, diameter=12)
         self.disp.fill(self.screen)
-        self.disp.show()            
-        
+        self.disp.show()
+
     def draw_calibration_target(self, x, y):
-        
+
         self.draw_drift_correction_target(x, y)
 
     def fix_triggered_drift_correction(self, pos=None, min_samples=10, max_dev=60, reset_threshold=30):
@@ -552,7 +567,7 @@ class EyeTribeTracker(BaseEyeTracker):
                     return True
                 else:
                     lx = []
-                    ly = []            
+                    ly = []
 
     def get_eyetracker_clock_async(self):
 
@@ -573,7 +588,8 @@ class EyeTribeTracker(BaseEyeTracker):
                    in the log file
         """
 
-        self.eyetribe.log_message(msg)
+        #self.eyetribe.log_message(msg)
+        self.eyetribe.log_message_flush(msg)
 
     def prepare_drift_correction(self, pos):
 
@@ -594,19 +610,19 @@ class EyeTribeTracker(BaseEyeTracker):
                    being tracked (as specified by self.eye_used) or -1
                    when no data is obtainable
         """
-        
+
         # get newest pupil size
         ps = self.eyetribe.pupil_size()
-        
+
         # invalid data
         if ps == None:
             return -1
-        
+
         # check if the new pupil size is the same as the previous
         if ps != self.prevps:
             # update the pupil size
             self.prevps = copy.copy(ps)
-        
+
         return self.prevps
 
 
@@ -623,16 +639,16 @@ class EyeTribeTracker(BaseEyeTracker):
 
         # get newest sample
         s = self.eyetribe.sample()
-        
+
         # invalid data
         if s == (None,None):
             return (-1,-1)
-        
+
         # check if the new sample is the same as the previous
         if s != self.prevsample:
             # update the current sample
             self.prevsample = copy.copy(s)
-        
+
         return self.prevsample
 
 
@@ -689,10 +705,10 @@ class EyeTribeTracker(BaseEyeTracker):
 
         self.eyetribe.stop_recording()
         self.recording = False
-    
-    
+
+
     def set_detection_type(self, eventdetection):
-        
+
         """Set the event detection type to either PyGaze algorithms, or
         native algorithms as provided by the manufacturer (only if
         available: detection type will default to PyGaze if no native
@@ -711,10 +727,10 @@ class EyeTribeTracker(BaseEyeTracker):
                         was passed, but native detection was not
                         available for saccade detection
         """
-        
+
         if eventdetection in ['pygaze','native']:
             self.eventdetection = eventdetection
-        
+
         return ('pygaze','pygaze','pygaze')
 
 
@@ -767,24 +783,24 @@ class EyeTribeTracker(BaseEyeTracker):
                         measured from experiment begin time
         """
 
-        
+
         # # # # #
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a blink detection
             # built into their API
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer blink detection; PyGaze algorithm \
-                will be used")
+                will be used"                                                                                                                    )
 
         # # # # #
         # PyGaze method
-        
+
         blinking = True
-        
+
         # loop while there is a blink
         while blinking:
             # get newest sample
@@ -793,10 +809,10 @@ class EyeTribeTracker(BaseEyeTracker):
             if self.is_valid_sample(gazepos):
                 # if it is a valid sample, blinking has stopped
                 blinking = False
-        
+
         # return timestamp of blink end
-        return clock.get_time()        
-        
+        return clock.get_time()
+
 
     def wait_for_blink_start(self):
 
@@ -809,24 +825,24 @@ class EyeTribeTracker(BaseEyeTracker):
         timestamp        --    blink starting time in milliseconds, as
                         measured from experiment begin time
         """
-        
+
         # # # # #
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a blink detection
             # built into their API
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer blink detection; PyGaze algorithm \
-                will be used")
+                will be used"                                                                                                                    )
 
         # # # # #
         # PyGaze method
-        
+
         blinking = False
-        
+
         # loop until there is a blink
         while not blinking:
             # get newest sample
@@ -841,7 +857,7 @@ class EyeTribeTracker(BaseEyeTracker):
                     if clock.get_time()-t0 >= self.blinkthresh:
                         # return timestamp of blink start
                         return t0
-        
+
 
     def wait_for_fixation_end(self):
 
@@ -865,23 +881,23 @@ class EyeTribeTracker(BaseEyeTracker):
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a blink detection
             # built into their API
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer fixation detection; \
-                PyGaze algorithm will be used")
+                PyGaze algorithm will be used"                                                                                                                                                                                        )
 
         # # # # #
         # PyGaze method
-            
+
         # function assumes that a 'fixation' has ended when a deviation of more than fixtresh
         # from the initial 'fixation' position has been detected
-        
+
         # get starting time and position
         stime, spos = self.wait_for_fixation_start()
-        
+
         # loop until fixation has ended
         while True:
             # get new sample
@@ -914,31 +930,31 @@ class EyeTribeTracker(BaseEyeTracker):
                        tuple of the position from which the fixation
                        was initiated
         """
-        
+
         # # # # #
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a fixation start
             # detection built into their API (only ending)
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer fixation detection; \
-                PyGaze algorithm will be used")
-            
-            
+                PyGaze algorithm will be used"                                                                                                                                                                                        )
+
+
         # # # # #
         # PyGaze method
-        
+
         # function assumes a 'fixation' has started when gaze position
         # remains reasonably stable for self.fixtimetresh
-        
+
         # get starting position
         spos = self.sample()
         while not self.is_valid_sample(spos):
             spos = self.sample()
-        
+
         # get starting time
         t0 = clock.get_time()
 
@@ -983,17 +999,17 @@ class EyeTribeTracker(BaseEyeTracker):
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a blink detection
             # built into their API
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer saccade detection; PyGaze \
-                algorithm will be used")
+                algorithm will be used"                                                                                                                                                            )
 
         # # # # #
         # PyGaze method
-        
+
         # get starting position (no blinks)
         t0, spos = self.wait_for_saccade_start()
         # get valid sample
@@ -1050,17 +1066,17 @@ class EyeTribeTracker(BaseEyeTracker):
         # EyeTribe method
 
         if self.eventdetection == 'native':
-            
+
             # print warning, since EyeTribe does not have a blink detection
             # built into their API
-            
+
             print("WARNING! 'native' event detection has been selected, \
                 but EyeTribe does not offer saccade detection; PyGaze \
-                algorithm will be used")
+                algorithm will be used"                                                                                                                                                            )
 
         # # # # #
         # PyGaze method
-        
+
         # get starting position (no blinks)
         newpos = self.sample()
         while not self.is_valid_sample(newpos):
@@ -1100,10 +1116,10 @@ class EyeTribeTracker(BaseEyeTracker):
                 prevpos = newpos[:]
 
         return stime, spos
-    
-    
+
+
     def is_valid_sample(self, gazepos):
-        
+
         """Checks if the sample provided is valid, based on EyeTribe specific
         criteria (for internal use)
         
@@ -1115,10 +1131,10 @@ class EyeTribeTracker(BaseEyeTracker):
         valid        --    a Boolean: True on a valid sample, False on
                         an invalid sample
         """
-        
+
         # return False if a sample is invalid
         if gazepos == (None,None) or gazepos == (-1,-1):
             return False
-        
+
         # in any other case, the sample is valid
         return True
