@@ -574,7 +574,7 @@ class connection:
         # Define properties for this connection.
         self.host = host
         self.port = port
-        self.DEBUG = False
+        self.DEBUG = True #ARMANDOLARA
 
         # Dict for the most recent responses. This dict is updated whenever
         # a new response comes in from the tracker. It has top-level keys
